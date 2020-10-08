@@ -1,86 +1,146 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using HtmlAgilityPack;
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using WebApplication.Models;
 
 namespace WebApplication
 {
-    public class Parser
+    public class Parser : IHostedService, IDisposable
     {
-        internal AppDb Db { get; set; }
+        internal WeatherForecastContext _context { get; set; }
+        private readonly ILogger<Parser> _logger;
+        private Timer _timer;
 
         // ссылка на сайт, который будем парсить
-        private static String url = "https://pogoda33.ru/";
+        private const String URL = "https://world-weather.ru/pogoda/";
+        // регион для которого смотрим города
+        private const String REGION = "russia/bryansk_oblast/";
 
-        public Parser() {}
-
-        internal Parser(AppDb db)
-        {
-            Db = db;
+        public Parser(ILogger<Parser> logger) {
+            _logger = logger;
         }
 
-        // когда мы уже знаем адрес нужной страницы
-        public WeatherInHour[] findWheatherOnDateAsync(String cityName, DateTime date)
+        public void UpdateAllCityes()
         {
-            String result;
-            //TODO: убрать хардкод даты
-            var currentUrl = url + $"погода-{cityName}/день/4-октября";
+            _context = new WeatherForecastContext();
+            var currentUrl = URL + REGION;
             HtmlWeb web = new HtmlWeb();
             var doc = web.Load(currentUrl);
-            
-            var weatherDoc = doc.DocumentNode.SelectSingleNode("//div[@class='days d-none d-lg-block']");
-            WeatherInHour[] weathers = new WeatherInHour[4];
-            for (int i = 0; i < weathers.Length; i++)
-                weathers[i] = new WeatherInHour();
-            if (weatherDoc != null)
+            //_logger.LogInformation("КОдировка" + doc.Encoding);
+            var TownElements = doc.DocumentNode.SelectNodes("//li[@class='city-block']");
+            foreach (var TownElement in TownElements)
             {
-                var sky = weatherDoc.SelectNodes("//div[@class='col-md-1 sky-icon mtt']");
-			if (sky != null)
-                    for (int i = 0; i < weathers.Length; i++)
-                        weathers[i].Sky = sky[i*2+1].Attributes["data-mtt"].Value;
+                var temp = TownElement.SelectSingleNode("a");
+                String cityName = temp.InnerText;
+                String link = temp.Attributes["href"].Value;
 
-            var temperature = weatherDoc.SelectNodes("//div[@class='col-md-1 temperature']");
-			if(temperature != null)
-				for (int i = 0; i < weathers.Length; i++){
-                    String t = temperature[i * 2 + 1].InnerText;
-                    weathers[i].Temperature = int.Parse(t.Substring(0,t.Length-2));
-				}
-			var precipitation = weatherDoc.SelectNodes("//div[@class='col-md-1 precipitation']");
-			if(precipitation != null)
-				for (int i = 0; i < weathers.Length; i++){
-					String t = precipitation[i * 2 + 1].InnerText;
-                    weathers[i].Precipitation = float.Parse(t.Substring(0,t.Length-2));
-				}
-			
-			var pressure = weatherDoc.SelectNodes("//div[@class='col-md-1 pressure']");
-			if(pressure != null)
-				for (int i = 0; i < weathers.Length; i++){
-					String t = pressure[i * 2 + 1].InnerText;
-                    weathers[i].Pressure = int.Parse(t.Substring(0,t.Length-4));
-				}
-			
-			// простите за это
-			var speed = weatherDoc.SelectNodes("//div[@class='col-md-1 wind-speed']");
-			if(speed != null)
-				for (int i = 0; i < weathers.Length; i++){
-					String t = speed[i * 2 + 1].InnerText;
-                    weathers[i].Speed = int.Parse(t.Substring(0,t.Length-4));
-					// направление тоже попало сюда, начиная с 9 элемента
-					t = speed[8+i * 2 + 1].InnerText;
-                    weathers[i].Wind = t.Substring(1);
-				}
-			var humidiy = weatherDoc.SelectNodes("//div[@class='col-md-1 dew-point']");
-			if(humidiy != null)
-				for (int i = 0; i < weathers.Length; i++){
-					String t = humidiy[i * 2 + 1].InnerText;
-                    weathers[i].Humidiy = int.Parse(t.Substring(0,t.Length-1));
-				}
+                City city = _context.Citys
+                    .Where(t => t.Name == cityName)
+                    .Include(t => t.WeatherForecasts)
+                    .FirstOrDefault();
+
+                _logger.LogInformation($"Get weather by {cityName}");
+                if (city == null)
+                {
+                    city = new City();
+                    city.Name = cityName;
+                    city.WeatherForecasts = new List<WeatherForecast>();
+                    setWheatherForecast(link, city);
+                    _context.Citys.Add(city);
+                }
+                else
+                {
+                    city.WeatherForecasts.Clear();
+                    _context.SaveChanges();
+                    setWheatherForecast(link, city);
+                }
+                _context.SaveChanges();
             }
-
-            return weathers;
         }
 
+        private void DoWork(object obj)
+        {
+            _logger.LogInformation("Start update weather");
+            UpdateAllCityes();
+        }
+
+            // когда мы уже знаем адрес нужной страницы
+        private void setWheatherForecast(String link, City city)
+        {
+            var currentUrl = "https:" + link + $"10days/";
+            HtmlWeb web = new HtmlWeb();
+
+            var docWeather = web.Load(currentUrl);
+            var weatherElements = docWeather.DocumentNode.SelectNodes("//div[@class='weather-short']");
+            // небольшой костыль, тк с сайта взять дату трудно
+            DateTime time = DateTime.Now;
+            foreach (var weatherOnDay in weatherElements)
+            {
+                //String date = weatherOnDay.SelectSingleNode("div[@class='dates short-d']").InnerText;
+
+                foreach (var weatherOnPartOfDay in weatherOnDay.SelectNodes("table/tr"))
+                {
+                    var weatherForecast = new WeatherForecast();
+
+                    //TODO: дату в каждый день и вроде все!
+                    weatherForecast.Date = time;
+
+                    weatherForecast.PartOfDay = weatherOnPartOfDay.SelectSingleNode("td[@class='weather-day']").InnerText;
+
+                    String temp = weatherOnPartOfDay.SelectSingleNode("td[@class='weather-temperature']").InnerText;
+                    weatherForecast.Temperature = int.Parse(temp.Substring(0, temp.Length-1));
+
+                    weatherForecast.Sky = weatherOnPartOfDay.SelectSingleNode("td[@class='weather-temperature']/div").Attributes["title"].Value;
+
+                    temp = weatherOnPartOfDay.SelectSingleNode("td[@class='weather-probability']").InnerText;
+                    weatherForecast.Precipitation = int.Parse(temp.Substring(0, temp.Length - 1));
+
+                    weatherForecast.Pressure = int.Parse(weatherOnPartOfDay.SelectSingleNode("td[@class='weather-pressure']").InnerText);
+
+                    temp = weatherOnPartOfDay.SelectSingleNode("td[@class='weather-humidity']").InnerText;
+                    weatherForecast.Humidity = int.Parse(temp.Substring(0, temp.Length - 1));
+
+                    weatherForecast.Speed = float.Parse(weatherOnPartOfDay.SelectSingleNode("td[@class='weather-wind']").InnerText.Replace('.', ','));
+
+                    weatherForecast.Wind = weatherOnPartOfDay.SelectSingleNode("td[@class='weather-wind']/span").Attributes["title"].Value;
+
+                    weatherForecast.CityId = city.CityId;
+
+                    city.WeatherForecasts.Add(weatherForecast);
+
+                    //Console.WriteLine("температура: " + weatherOnPartOfDay.SelectSingleNode("td[@class='weather-temperature']").InnerText + "\n");
+                }
+                time = time.AddDays(1);
+            }
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            _timer = new Timer(
+                DoWork, 
+                null, 
+                TimeSpan.Zero,
+                TimeSpan.FromDays(1));
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken)
+        {
+            _timer?.Change(Timeout.Infinite, 0);
+            return Task.CompletedTask;
+        }
+
+        public void Dispose()
+        {
+            _timer?.Dispose();
+        }
     }
 }
+

@@ -23,7 +23,8 @@ namespace WebApplication
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddTransient<AppDb>(_ => new AppDb(Configuration["ConnectionStrings:DefaultConnection"]));
+            services.AddHostedService<Parser>();
+            services.AddDbContext<WeatherForecastContext>(options => options.UseMySQL("server=localhost;UserId=root;Password=xD_HOHOHO32;database=weather;"));
             services.AddControllers();
         }
 

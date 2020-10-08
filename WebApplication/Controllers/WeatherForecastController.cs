@@ -3,36 +3,44 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.VisualBasic;
 using WebApplication.Models;
 
 namespace WebApplication.Controllers
 {
     [ApiController]
-    [Route("[controller]")]
+    [Route("api/[controller]")]
     public class WeatherForecastController : ControllerBase
     {
-        private static readonly string[] Summaries = new[]
-        {
-            "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-        };
-
+        private readonly WeatherForecastContext _context;
         private readonly ILogger<WeatherForecastController> _logger;
 
         public WeatherForecastController(ILogger<WeatherForecastController> logger)
         {
             _logger = logger;
+            _context = new WeatherForecastContext();
         }
 
         [HttpGet]
-        public IEnumerable<WeatherForecast> Get()
+        public async Task<ActionResult<IEnumerable<City>>> GetCityes()
         {
-            var rng = new Random();
-            return Enumerable.Range(1, 5).Select(index => new WeatherForecast
+            _logger.LogInformation("Get request");
+            return await _context.Citys.ToListAsync();
+        }
+
+        [HttpGet]
+        [Route("{id}")]
+        public async Task<ActionResult<City>> GetCityes(int id)
+        {
+            _logger.LogInformation($"Get request by id : {id}");
+            City cityWheatherForecasts = await _context.Citys.Include(t => t.WeatherForecasts).Where(t => t.CityId == id).FirstOrDefaultAsync();
+            if(cityWheatherForecasts == null)
             {
-                Date = DateTime.Now.AddDays(index),
-            })
-            .ToArray();
+                return NotFound();
+            }
+            return cityWheatherForecasts;
         }
     }
 }
