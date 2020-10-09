@@ -24,7 +24,6 @@ namespace WebApplication
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddHostedService<Parser>();
-            services.AddDbContext<WeatherForecastContext>(options => options.UseMySQL("server=localhost;UserId=root;Password=xD_HOHOHO32;database=weather;"));
             services.AddControllers();
         }
 
