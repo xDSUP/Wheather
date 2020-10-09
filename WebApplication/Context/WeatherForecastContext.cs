@@ -19,7 +19,7 @@ namespace WebApplication.Models
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            optionsBuilder.UseMySQL("server=localhost;UserId=root;Password=xD_HOHOHO32;database=weather;charset=utf8;");
+            optionsBuilder.UseMySQL("server=localhost;UserId=root;Password=x32;database=weather;charset=utf8;");
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
